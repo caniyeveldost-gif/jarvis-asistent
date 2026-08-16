@@ -1,10 +1,11 @@
 import { generateGeminiReply, generateGeminiAudio, parseRequestBody, ChatHistoryItem } from './_gemini.js';
+import { getClientIdentifier, checkAndIncrementRateLimit } from './_rateLimit.js';
 
 export default async function handler(req: any, res: any) {
   // Set CORS headers for all responses
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-client-id');
 
   // Handle preflight OPTIONS
   if (req.method === 'OPTIONS') {
@@ -17,10 +18,22 @@ export default async function handler(req: any, res: any) {
 
   try {
     const body = await parseRequestBody(req);
-    const { message, history = [], voice = 'Kore' } = body;
+    const { message, history = [], voice = 'Kore', clientId } = body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'Mesaj daxil edilməyib.' });
+    }
+
+    // 1. Rate Limiting Check (Max 5 requests per day)
+    const clientIdentifier = getClientIdentifier(req, clientId);
+    const limitStatus = checkAndIncrementRateLimit(clientIdentifier);
+
+    if (!limitStatus.allowed) {
+      return res.status(429).json({
+        error: 'Gündəlik limitiniz bitib, sabah yenidən cəhd edin',
+        remaining: 0,
+        limit: limitStatus.limit,
+      });
     }
 
     const cleanUserQuery = message.trim();
@@ -78,10 +91,10 @@ Xüsusi qaydalar:
       });
     }
 
-    // 1. Generate text answer
+    // 2. Generate text answer
     const replyText = await generateGeminiReply(formattedContents, systemInstruction);
 
-    // 2. Generate Gemini Audio TTS for the reply
+    // 3. Generate Gemini Audio TTS for the reply
     const audioData = await generateGeminiAudio(replyText, voice);
 
     return res.status(200).json({
@@ -89,6 +102,8 @@ Xüsusi qaydalar:
       audio: audioData ? audioData.audioBase64 : null,
       mimeType: audioData ? audioData.mimeType : null,
       timestamp: new Date().toISOString(),
+      remaining: limitStatus.remaining,
+      limit: limitStatus.limit,
     });
   } catch (error: any) {
     console.error('Chat API Error:', error);

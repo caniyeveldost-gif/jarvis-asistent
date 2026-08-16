@@ -9,10 +9,26 @@ import { JarvisCore } from './components/JarvisCore';
 import { ChatHistory, ChatItem } from './components/ChatHistory';
 import { SettingsModal } from './components/SettingsModal';
 import { ManualInputBar } from './components/ManualInputBar';
+import { Footer } from './components/Footer';
+import { InfoModal, InfoModalTab } from './components/InfoModal';
 import { voiceRecognizer } from './utils/speechRecognition';
 import { geminiAudioPlayer } from './utils/geminiAudioPlayer';
 import { ttsManager } from './utils/speechSynthesis';
 import { soundFX } from './utils/audioEffects';
+
+// Helper to get or generate persistent browser Client ID
+function getOrCreateClientId(): string {
+  try {
+    let id = localStorage.getItem('jarvis_client_id');
+    if (!id) {
+      id = 'usr_' + Math.random().toString(36).substring(2, 12) + '_' + Date.now().toString(36);
+      localStorage.setItem('jarvis_client_id', id);
+    }
+    return id;
+  } catch {
+    return 'default_client';
+  }
+}
 
 export default function App() {
   // Application State
@@ -34,8 +50,26 @@ export default function App() {
   const [statusText, setStatusText] = useState<string>('SİSTEM HAZIRDIR');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Settings State
+  // Rate Limiting state (5 requests per day)
+  const [remainingRequests, setRemainingRequests] = useState<number | null>(() => {
+    try {
+      const savedDate = localStorage.getItem('jarvis_limit_date');
+      const today = new Date().toISOString().slice(0, 10);
+      if (savedDate === today) {
+        const count = localStorage.getItem('jarvis_remaining_requests');
+        return count !== null ? Number(count) : 5;
+      }
+      return 5;
+    } catch {
+      return 5;
+    }
+  });
+
+  // Settings & Info Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
+  const [infoModalTab, setInfoModalTab] = useState<InfoModalTab>('about');
+
   const [language, setLanguage] = useState<string>(() => {
     return localStorage.getItem('jarvis_lang') || 'az-AZ';
   });
@@ -85,6 +119,19 @@ export default function App() {
     }
   }, [messages]);
 
+  // Save remaining requests state
+  useEffect(() => {
+    if (remainingRequests !== null) {
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        localStorage.setItem('jarvis_limit_date', today);
+        localStorage.setItem('jarvis_remaining_requests', String(remainingRequests));
+      } catch (e) {
+        console.warn('Failed to save limit state:', e);
+      }
+    }
+  }, [remainingRequests]);
+
   // Handle language change for speech recognition
   const handleLanguageChange = (newLang: string) => {
     setLanguage(newLang);
@@ -109,6 +156,12 @@ export default function App() {
   const handleToggleAutoSpeak = (enabled: boolean) => {
     setAutoSpeak(enabled);
     localStorage.setItem('jarvis_auto_speak', enabled.toString());
+  };
+
+  // Open specific Info Modal tab (Haqqında / Məxfilik / Əlaqə)
+  const handleOpenInfoModal = (tab: InfoModalTab) => {
+    setInfoModalTab(tab);
+    setIsInfoModalOpen(true);
   };
 
   // Stop currently playing audio
@@ -184,7 +237,6 @@ export default function App() {
       setAudioLoadingId(null);
 
       if (data.audio) {
-        // Cache audio in state
         setMessages((prev) =>
           prev.map((m) =>
             m.id === id ? { ...m, audio: data.audio, mimeType: data.mimeType } : m
@@ -239,7 +291,7 @@ export default function App() {
     }
   };
 
-  // Process User Query with Gemini API (Text + Gemini AI Audio TTS)
+  // Process User Query with Gemini API (Text + Gemini AI Audio TTS + Rate limit check)
   const handleSendQuery = async (queryText: string) => {
     if (!queryText.trim()) return;
 
@@ -247,6 +299,8 @@ export default function App() {
     setTranscript('');
     setIsListening(false);
     voiceRecognizer.stop();
+
+    const clientId = getOrCreateClientId();
 
     // 1. Add User Message to History
     const userMsgId = `user_${Date.now()}`;
@@ -271,29 +325,49 @@ export default function App() {
     setStatusText('ANALİZ EDİLİR...');
 
     try {
-      // 3. Call backend Gemini API endpoint for both text reply and Gemini AI Audio
+      // 3. Call backend Gemini API endpoint
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-client-id': clientId,
+        },
         body: JSON.stringify({
           message: queryText,
           history: priorHistory,
           language,
           voice: geminiVoice,
+          clientId,
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Server cavab vermədi.');
+      const data = await response.json().catch(() => ({}));
+
+      // Check if rate limit reached (HTTP 429)
+      if (response.status === 429) {
+        setRemainingRequests(0);
+        setIsThinking(false);
+        setStatusText('LİMİT BİTDİ');
+        const limitMsg = data.error || 'Gündəlik limitiniz bitib, sabah yenidən cəhd edin';
+        setErrorMessage(limitMsg);
+        if (soundFXEnabled) soundFX.playError();
+        return;
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Server cavab vermədi.');
+      }
+
+      // Update remaining requests from server response
+      if (typeof data.remaining === 'number') {
+        setRemainingRequests(data.remaining);
+      }
+
       const replyText = data.reply || 'Cavab hazırlana bilmədi.';
       const audioBase64 = data.audio || null;
       const mimeType = data.mimeType || 'audio/pcm;rate=24000';
 
-      // 4. Add Assistant Message to History (with cached Gemini AI audio)
+      // 4. Add Assistant Message to History
       const assistantMsgId = `asst_${Date.now()}`;
       const asstTimestamp = new Date().toLocaleTimeString([], {
         hour: '2-digit',
@@ -316,7 +390,7 @@ export default function App() {
         soundFX.playReady();
       }
 
-      // 5. If autoSpeak is enabled, play Gemini AI Voice or fallback to TTS immediately
+      // 5. If autoSpeak is enabled, play Gemini AI Voice or fallback to TTS
       if (autoSpeak) {
         setStatusText('CAVAB VERİLİR...');
         setCurrentPlayingId(assistantMsgId);
@@ -386,7 +460,6 @@ export default function App() {
 
   // Toggle Microphone Listening
   const handleToggleMic = () => {
-    // If speaking, stop speaking
     if (isSpeaking) {
       handleStopSpeaking();
     }
@@ -436,12 +509,13 @@ export default function App() {
   // Clear Chat History
   const handleClearHistory = () => {
     geminiAudioPlayer.stop();
+    ttsManager.stop();
     setMessages([]);
     localStorage.removeItem('jarvis_chat_history');
   };
 
   return (
-    <div className="min-h-screen bg-[#050811] text-slate-100 flex flex-col relative pb-16">
+    <div className="min-h-screen bg-[#050811] text-slate-100 flex flex-col relative selection:bg-cyan-500 selection:text-black">
       {/* Top Futuristic Header */}
       <Header
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -451,7 +525,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-4 flex flex-col items-center">
+      <main className="flex-1 w-full max-w-4xl mx-auto px-4 py-4 flex flex-col items-center pb-24">
         {/* Central Jarvis Orb & Big Microphone Button */}
         <JarvisCore
           isListening={isListening}
@@ -486,6 +560,13 @@ export default function App() {
         isThinking={isThinking}
       />
 
+      {/* Footer with Static Page Links & Rate Limit Status */}
+      <Footer
+        onOpenInfo={handleOpenInfoModal}
+        remainingRequests={remainingRequests}
+        maxDailyRequests={5}
+      />
+
       {/* Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
@@ -498,6 +579,13 @@ export default function App() {
         onToggleSoundFX={handleToggleSoundFX}
         autoSpeak={autoSpeak}
         onToggleAutoSpeak={handleToggleAutoSpeak}
+      />
+
+      {/* Static Information Modal (Haqqında / Məxfilik / Əlaqə) */}
+      <InfoModal
+        isOpen={isInfoModalOpen}
+        onClose={() => setIsInfoModalOpen(false)}
+        initialTab={infoModalTab}
       />
     </div>
   );
