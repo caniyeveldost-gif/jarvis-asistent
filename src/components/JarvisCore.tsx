@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Volume2, Sparkles, Loader2, Square } from 'lucide-react';
+import { Mic, MicOff, Volume2, Sparkles, Loader2, Square, Gift } from 'lucide-react';
 import { AudioVisualizer } from './AudioVisualizer';
 
 interface JarvisCoreProps {
@@ -11,6 +11,8 @@ interface JarvisCoreProps {
   onStopSpeaking: () => void;
   statusText: string;
   errorMessage?: string | null;
+  isLimitReached?: boolean;
+  onWatchAdClick?: () => void;
 }
 
 export const JarvisCore: React.FC<JarvisCoreProps> = ({
@@ -22,6 +24,8 @@ export const JarvisCore: React.FC<JarvisCoreProps> = ({
   onStopSpeaking,
   statusText,
   errorMessage,
+  isLimitReached = false,
+  onWatchAdClick,
 }) => {
   // Determine state type
   const stateType: 'listening' | 'speaking' | 'thinking' | 'idle' = isListening
@@ -182,6 +186,23 @@ export const JarvisCore: React.FC<JarvisCoreProps> = ({
       {errorMessage && (
         <div className="mt-3 w-full max-w-md px-4 py-2.5 rounded-lg bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs sm:text-sm text-center">
           {errorMessage}
+        </div>
+      )}
+
+      {/* Rewarded Ad Action Button when Limit is Reached */}
+      {isLimitReached && onWatchAdClick && (
+        <div className="mt-3.5 w-full max-w-md flex flex-col items-center animate-fade-in">
+          <button
+            onClick={onWatchAdClick}
+            className="w-full flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-cyan-500 hover:from-amber-400 hover:to-cyan-400 text-slate-950 font-tech font-black text-xs sm:text-sm uppercase tracking-wider transition-all shadow-[0_0_30px_rgba(245,158,11,0.6)] cursor-pointer active:scale-98 animate-pulse hover:animate-none"
+          >
+            <Gift className="w-4 h-4 text-slate-950" />
+            <span>Reklam izlə, 5 sual da qazan</span>
+            <Sparkles className="w-4 h-4 text-slate-950" />
+          </button>
+          <span className="text-[10px] text-amber-300/80 font-mono mt-1.5">
+            15 saniyəlik qısa reklam izləyərək dərhal +5 sual qazanın
+          </span>
         </div>
       )}
     </div>

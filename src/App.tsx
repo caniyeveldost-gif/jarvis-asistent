@@ -12,13 +12,14 @@ import { ManualInputBar } from './components/ManualInputBar';
 import { Footer } from './components/Footer';
 import { InfoModal, InfoModalTab } from './components/InfoModal';
 import { AdsterraBanner } from './components/AdsterraBanner';
+import { RewardedAdModal } from './components/RewardedAdModal';
 import { voiceRecognizer } from './utils/speechRecognition';
 import { geminiAudioPlayer } from './utils/geminiAudioPlayer';
 import { ttsManager } from './utils/speechSynthesis';
 import { soundFX } from './utils/audioEffects';
 
 // Helper to get or generate persistent browser Client ID
-function getOrCreateClientId(): string {
+export function getOrCreateClientId(): string {
   try {
     let id = localStorage.getItem('jarvis_client_id');
     if (!id) {
@@ -51,7 +52,7 @@ export default function App() {
   const [statusText, setStatusText] = useState<string>('SİSTEM HAZIRDIR');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Rate Limiting state (5 requests per day)
+  // Rate Limiting & Rewarded state
   const [remainingRequests, setRemainingRequests] = useState<number | null>(() => {
     try {
       const savedDate = localStorage.getItem('jarvis_limit_date');
@@ -66,10 +67,20 @@ export default function App() {
     }
   });
 
+  const [maxDailyRequests, setMaxDailyRequests] = useState<number>(() => {
+    try {
+      const savedLimit = localStorage.getItem('jarvis_max_daily_limit');
+      return savedLimit ? Number(savedLimit) : 5;
+    } catch {
+      return 5;
+    }
+  });
+
   // Settings & Info Modal State
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
   const [infoModalTab, setInfoModalTab] = useState<InfoModalTab>('about');
+  const [isRewardModalOpen, setIsRewardModalOpen] = useState<boolean>(false);
 
   const [language, setLanguage] = useState<string>(() => {
     return localStorage.getItem('jarvis_lang') || 'az-AZ';
@@ -86,7 +97,7 @@ export default function App() {
 
   const historyEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Speech Recognition & Gemini Audio listener
+  // Initialize Speech Recognition & Gemini Audio listener & Server Limit sync
   useEffect(() => {
     voiceRecognizer.setLanguage(language);
     soundFX.enabled = soundFXEnabled;
@@ -100,6 +111,22 @@ export default function App() {
         }
       }
     });
+
+    // Synchronize limit status with server on mount
+    const clientId = getOrCreateClientId();
+    fetch(`/api/reward?clientId=${encodeURIComponent(clientId)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && typeof data.remaining === 'number') {
+          setRemainingRequests(data.remaining);
+          if (typeof data.limit === 'number') {
+            setMaxDailyRequests(data.limit);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to sync rate limit with server:', err);
+      });
 
     // Welcome chime on initial mount
     const timer = setTimeout(() => {
@@ -120,18 +147,19 @@ export default function App() {
     }
   }, [messages]);
 
-  // Save remaining requests state
+  // Save remaining requests and max limit state
   useEffect(() => {
     if (remainingRequests !== null) {
       try {
         const today = new Date().toISOString().slice(0, 10);
         localStorage.setItem('jarvis_limit_date', today);
         localStorage.setItem('jarvis_remaining_requests', String(remainingRequests));
+        localStorage.setItem('jarvis_max_daily_limit', String(maxDailyRequests));
       } catch (e) {
         console.warn('Failed to save limit state:', e);
       }
     }
-  }, [remainingRequests]);
+  }, [remainingRequests, maxDailyRequests]);
 
   // Handle language change for speech recognition
   const handleLanguageChange = (newLang: string) => {
@@ -172,6 +200,17 @@ export default function App() {
     setIsSpeaking(false);
     setCurrentPlayingId(null);
     setStatusText('SİSTEM HAZIRDIR');
+  };
+
+  // Handle Reward Claimed after watching Adsterra Ad
+  const handleRewardClaimed = (newRemaining: number, newLimit: number) => {
+    setRemainingRequests(newRemaining);
+    setMaxDailyRequests(newLimit);
+    setErrorMessage(null);
+    setStatusText('SİSTEM HAZIRDIR (+5 SUAL ƏLAVƏ EDİLDİ)');
+    if (soundFXEnabled) {
+      soundFX.playActivation();
+    }
   };
 
   // Play a specific message audio using Gemini AI Voice (or TTS fallback)
@@ -359,9 +398,12 @@ export default function App() {
         throw new Error(data.error || 'Server cavab vermədi.');
       }
 
-      // Update remaining requests from server response
+      // Update remaining requests and limit from server response
       if (typeof data.remaining === 'number') {
         setRemainingRequests(data.remaining);
+      }
+      if (typeof data.limit === 'number') {
+        setMaxDailyRequests(data.limit);
       }
 
       const replyText = data.reply || 'Cavab hazırlana bilmədi.';
@@ -515,6 +557,8 @@ export default function App() {
     localStorage.removeItem('jarvis_chat_history');
   };
 
+  const isLimitReached = remainingRequests !== null && remainingRequests <= 0;
+
   return (
     <div className="min-h-screen bg-[#050811] text-slate-100 flex flex-col relative selection:bg-cyan-500 selection:text-black">
       {/* Top Futuristic Header */}
@@ -537,6 +581,8 @@ export default function App() {
           onStopSpeaking={handleStopSpeaking}
           statusText={statusText}
           errorMessage={errorMessage}
+          isLimitReached={isLimitReached}
+          onWatchAdClick={() => setIsRewardModalOpen(true)}
         />
 
         {/* Reklam / Adsterra 300x250 Banner */}
@@ -568,7 +614,7 @@ export default function App() {
       <Footer
         onOpenInfo={handleOpenInfoModal}
         remainingRequests={remainingRequests}
-        maxDailyRequests={5}
+        maxDailyRequests={maxDailyRequests}
       />
 
       {/* Settings Modal */}
@@ -590,6 +636,15 @@ export default function App() {
         isOpen={isInfoModalOpen}
         onClose={() => setIsInfoModalOpen(false)}
         initialTab={infoModalTab}
+      />
+
+      {/* Rewarded Adsterra Modal (Watch ad, earn 5 questions) */}
+      <RewardedAdModal
+        isOpen={isRewardModalOpen}
+        onClose={() => setIsRewardModalOpen(false)}
+        onRewardClaimed={handleRewardClaimed}
+        clientId={getOrCreateClientId()}
+        onPlaySuccessSound={() => soundFX.playActivation()}
       />
     </div>
   );

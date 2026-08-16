@@ -1,14 +1,16 @@
 // In-memory rate limiter for Vercel Serverless / Node.js runtime
-// Max 5 questions per user per day
+// Base limit: 5 questions per user per day + Bonus questions earned from watching ads
 
 interface RateLimitRecord {
   count: number;
+  bonus: number;
   date: string; // YYYY-MM-DD
 }
 
 const rateLimitStore = new Map<string, RateLimitRecord>();
 
 export const MAX_DAILY_LIMIT = 5;
+export const BONUS_PER_AD = 5;
 
 // Clean up old entries periodically to prevent memory leaks
 function cleanupStore() {
@@ -61,6 +63,7 @@ export function checkAndIncrementRateLimit(identifier: string): {
   remaining: number;
   limit: number;
   count: number;
+  bonus: number;
   message?: string;
 } {
   const today = getTodayDateString();
@@ -73,16 +76,18 @@ export function checkAndIncrementRateLimit(identifier: string): {
   let record = rateLimitStore.get(identifier);
 
   if (!record || record.date !== today) {
-    // New day or new user
-    record = { count: 0, date: today };
+    record = { count: 0, bonus: 0, date: today };
   }
 
-  if (record.count >= MAX_DAILY_LIMIT) {
+  const effectiveLimit = MAX_DAILY_LIMIT + (record.bonus || 0);
+
+  if (record.count >= effectiveLimit) {
     return {
       allowed: false,
       remaining: 0,
-      limit: MAX_DAILY_LIMIT,
+      limit: effectiveLimit,
       count: record.count,
+      bonus: record.bonus || 0,
       message: 'Gündəlik limitiniz bitib, sabah yenidən cəhd edin',
     };
   }
@@ -91,26 +96,73 @@ export function checkAndIncrementRateLimit(identifier: string): {
   record.count += 1;
   rateLimitStore.set(identifier, record);
 
-  const remaining = Math.max(0, MAX_DAILY_LIMIT - record.count);
+  const remaining = Math.max(0, effectiveLimit - record.count);
 
   return {
     allowed: true,
     remaining,
-    limit: MAX_DAILY_LIMIT,
+    limit: effectiveLimit,
     count: record.count,
+    bonus: record.bonus || 0,
   };
 }
 
-export function getRemainingRateLimit(identifier: string): {
+export function addBonusQuestions(
+  identifier: string,
+  bonusAmount: number = BONUS_PER_AD
+): {
   remaining: number;
   limit: number;
   count: number;
+  bonus: number;
+} {
+  const today = getTodayDateString();
+  let record = rateLimitStore.get(identifier);
+
+  if (!record || record.date !== today) {
+    record = { count: 0, bonus: bonusAmount, date: today };
+  } else {
+    record.bonus = (record.bonus || 0) + bonusAmount;
+  }
+
+  rateLimitStore.set(identifier, record);
+
+  const effectiveLimit = MAX_DAILY_LIMIT + record.bonus;
+  const remaining = Math.max(0, effectiveLimit - record.count);
+
+  return {
+    remaining,
+    limit: effectiveLimit,
+    count: record.count,
+    bonus: record.bonus,
+  };
+}
+
+export function getRateLimitStatus(identifier: string): {
+  remaining: number;
+  limit: number;
+  count: number;
+  bonus: number;
 } {
   const today = getTodayDateString();
   const record = rateLimitStore.get(identifier);
+
   if (!record || record.date !== today) {
-    return { remaining: MAX_DAILY_LIMIT, limit: MAX_DAILY_LIMIT, count: 0 };
+    return {
+      remaining: MAX_DAILY_LIMIT,
+      limit: MAX_DAILY_LIMIT,
+      count: 0,
+      bonus: 0,
+    };
   }
-  const remaining = Math.max(0, MAX_DAILY_LIMIT - record.count);
-  return { remaining, limit: MAX_DAILY_LIMIT, count: record.count };
+
+  const effectiveLimit = MAX_DAILY_LIMIT + (record.bonus || 0);
+  const remaining = Math.max(0, effectiveLimit - record.count);
+
+  return {
+    remaining,
+    limit: effectiveLimit,
+    count: record.count,
+    bonus: record.bonus || 0,
+  };
 }
