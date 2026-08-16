@@ -1,11 +1,60 @@
 import { GoogleGenAI, Modality } from '@google/genai';
-import dotenv from 'dotenv';
 
-// Safely load dotenv if present (for local dev/Node)
-try {
-  dotenv.config();
-} catch {
-  // Ignore in Vercel environment where dotenv is not needed
+let geminiClient: GoogleGenAI | null = null;
+
+export function getGeminiClient(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      'GEMINI_API_KEY tapılmadı. Zəhmət olmasa sistem mühit dəyişənlərində GEMINI_API_KEY qeyd edin.'
+    );
+  }
+
+  if (!geminiClient) {
+    geminiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
+  }
+
+  return geminiClient;
+}
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Parse request body for Vercel Serverless / Node.js standard runtime
+export async function parseRequestBody(req: any): Promise<any> {
+  if (req.body) {
+    if (typeof req.body === 'string') {
+      try {
+        return JSON.parse(req.body);
+      } catch {
+        return {};
+      }
+    }
+    return req.body;
+  }
+
+  return new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (chunk: any) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
 }
 
 export interface ChatHistoryItem {
@@ -13,89 +62,18 @@ export interface ChatHistoryItem {
   text: string;
 }
 
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-let cachedClient: GoogleGenAI | null = null;
-
-// Safely resolve Gemini API Key from multiple common environment variable names
-export function getGeminiApiKey(): string {
-  const key =
-    process.env.GEMINI_API_KEY ||
-    process.env.GOOGLE_API_KEY ||
-    process.env.GOOGLE_GENAI_API_KEY ||
-    process.env.VITE_GEMINI_API_KEY ||
-    '';
-  return key.trim();
-}
-
-// Lazy safe initialization of GoogleGenAI client (never crashes on module import)
-export function getGeminiClient(): GoogleGenAI {
-  if (cachedClient) {
-    return cachedClient;
-  }
-
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
-    throw new Error(
-      'GEMINI_API_KEY tapılmadı. Xahiş edirəm Vercel Environment Variables bölməsində GEMINI_API_KEY təyin edin.'
-    );
-  }
-
-  cachedClient = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      },
-    },
-  });
-
-  return cachedClient;
-}
-
-// Helper to safely parse incoming request body on Vercel Serverless & Express
-export async function parseRequestBody(req: any): Promise<any> {
-  if (!req) return {};
-
-  if (req.body && typeof req.body === 'object') {
-    return req.body;
-  }
-
-  if (typeof req.body === 'string' && req.body.trim()) {
-    try {
-      return JSON.parse(req.body);
-    } catch {
-      return {};
-    }
-  }
-
-  // If body is a readable stream (raw Node request)
-  if (typeof req.on === 'function') {
-    try {
-      const buffers: Uint8Array[] = [];
-      for await (const chunk of req) {
-        buffers.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-      }
-      const rawText = Buffer.concat(buffers).toString('utf-8');
-      return rawText ? JSON.parse(rawText) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  return {};
-}
-
-// Generate Text Reply from Gemini with automatic fast fallback
+// Generate Text Reply from Gemini Models
 export async function generateGeminiReply(
-  contents: any[],
+  contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
   systemInstruction: string
 ): Promise<string> {
   const client = getGeminiClient();
-  const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.7-flash'];
+
+  // Try gemini-3.7-flash with retry
+  const modelsToTry = ['gemini-3.7-flash'];
   let lastError: any = null;
 
-  for (const model of candidateModels) {
+  for (const model of modelsToTry) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const response = await client.models.generateContent({
@@ -113,7 +91,7 @@ export async function generateGeminiReply(
       } catch (err: any) {
         lastError = err;
         const errMsg = err?.message || String(err);
-        console.warn(`Text attempt ${attempt + 1} with model ${model} failed: ${errMsg}`);
+        console.warn(`[Gemini Text] Attempt ${attempt + 1} with model ${model} failed: ${errMsg}`);
 
         const isTransient =
           errMsg.includes('503') ||
@@ -137,16 +115,18 @@ export async function generateGeminiReply(
 
 // Clean text for speech synthesis before sending to Gemini TTS
 export function cleanTextForTTS(text: string): string {
+  if (!text) return '';
   return text
-    .replace(/[*_~`#>\\]/g, '')
-    .replace(/https?:\/\/\S+/g, 'keçid')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/\s+/g, ' ')
+    .replace(/[*_~`#>\\]/g, '') // remove markdown symbols
+    .replace(/https?:\/\/\S+/g, 'keçid') // replace URLs
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown links
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // remove emojis
+    .replace(/\s+/g, ' ') // normalize whitespace
     .trim();
 }
 
 // Generate Audio Speech using Gemini TTS API (gemini-3.1-flash-tts-preview)
-// Sticking strictly to the chosen voice (default "Kore") with retries on the same voice
+// Sticking strictly to the chosen voice (default "Kore") with retries on the exact same voice
 export async function generateGeminiAudio(
   text: string,
   voiceName: string = 'Kore'
@@ -157,17 +137,24 @@ export async function generateGeminiAudio(
       : 'Kore';
 
   const cleanedText = cleanTextForTTS(text);
-  if (!cleanedText) return null;
+  if (!cleanedText) {
+    console.warn('[Gemini TTS] Empty text after cleaning, skipping audio generation');
+    return null;
+  }
+
+  // Ensure prompt text is reasonable length for prompt synthesis
+  const truncatedText = cleanedText.length > 1200 ? cleanedText.slice(0, 1200) + '...' : cleanedText;
+
+  console.log(`[Gemini TTS] Generating audio for ${truncatedText.length} chars using voice "${selectedVoice}"`);
 
   const client = getGeminiClient();
-  const prompt = `Azərbaycan dilində olan bu mətni aydın, səlis və kübar intonasiya ilə oxu: ${cleanedText}`;
 
   // Retry up to 3 times on the EXACT same voice without switching voice models
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await client.models.generateContent({
         model: 'gemini-3.1-flash-tts-preview',
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts: [{ text: truncatedText }] }],
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -184,22 +171,26 @@ export async function generateGeminiAudio(
       const audioPart = candidate?.content?.parts?.find((p) => p.inlineData && p.inlineData.data);
 
       if (audioPart && audioPart.inlineData?.data) {
+        console.log(`[Gemini TTS] Audio successfully generated (size: ${audioPart.inlineData.data.length} bytes, voice: ${selectedVoice})`);
         return {
           audioBase64: audioPart.inlineData.data,
           mimeType: audioPart.inlineData.mimeType || 'audio/pcm;rate=24000',
         };
+      } else {
+        console.warn(`[Gemini TTS] Attempt ${attempt + 1}: response candidate did not contain audio part`);
       }
     } catch (err: any) {
       const errMsg = err?.message || String(err);
-      console.warn(`TTS audio attempt ${attempt + 1} with voice "${selectedVoice}" failed:`, errMsg);
+      console.error(`[Gemini TTS] Attempt ${attempt + 1} with voice "${selectedVoice}" error:`, errMsg);
 
       if (attempt < 2) {
         // Wait and retry with the exact same voice model
-        await sleep(600 * (attempt + 1));
+        await sleep(500 * (attempt + 1));
         continue;
       }
     }
   }
 
+  console.error(`[Gemini TTS] Failed to generate audio after 3 attempts with voice "${selectedVoice}"`);
   return null;
 }

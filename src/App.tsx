@@ -213,17 +213,21 @@ export default function App() {
     }
   };
 
-  // Play a specific message audio using Gemini AI Voice (or TTS fallback)
+  // Play a specific message audio using Gemini AI Voice
   const handlePlaySpeech = async (
     id: string,
     text: string,
     cachedAudio?: string | null,
     cachedMimeType?: string | null
   ) => {
+    // Unlock and prime AudioContext on user interaction
+    geminiAudioPlayer.initOrResumeContext();
     geminiAudioPlayer.stop();
     ttsManager.stop();
     setCurrentPlayingId(id);
     setStatusText('SƏSLƏNDİRİLİR...');
+
+    console.log('[App] handlePlaySpeech triggered:', { id, hasCachedAudio: !!cachedAudio, voice: geminiVoice });
 
     // 1. If audio is already cached in the message
     if (cachedAudio) {
@@ -239,22 +243,10 @@ export default function App() {
           setStatusText('SİSTEM HAZIRDIR');
         },
         (err) => {
-          console.warn('Gemini audio playback error, falling back to TTS:', err);
-          ttsManager.speak(
-            text,
-            'tr-TR',
-            () => setIsSpeaking(true),
-            () => {
-              setIsSpeaking(false);
-              setCurrentPlayingId(null);
-              setStatusText('SİSTEM HAZIRDIR');
-            },
-            () => {
-              setIsSpeaking(false);
-              setCurrentPlayingId(null);
-              setStatusText('SİSTEM HAZIRDIR');
-            }
-          );
+          console.error('[App] Playback error with cached audio:', err);
+          setIsSpeaking(false);
+          setCurrentPlayingId(null);
+          setStatusText('SİSTEM HAZIRDIR');
         }
       );
       return;
@@ -263,6 +255,7 @@ export default function App() {
     // 2. Otherwise fetch audio on demand from /api/tts with the exact same voice
     setAudioLoadingId(id);
     try {
+      console.log('[App] Fetching TTS on demand for message:', id);
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,7 +263,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error('Audio alına bilmədi.');
+        throw new Error(`Server returned HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -294,17 +287,18 @@ export default function App() {
             setCurrentPlayingId(null);
             setStatusText('SİSTEM HAZIRDIR');
           },
-          () => {
+          (err) => {
+            console.error('[App] Playback error with fetched TTS:', err);
             setIsSpeaking(false);
             setCurrentPlayingId(null);
             setStatusText('SİSTEM HAZIRDIR');
           }
         );
       } else {
-        throw new Error('No audio in response');
+        throw new Error('No audio data in TTS response');
       }
-    } catch (err) {
-      console.warn('Gemini audio playback error:', err);
+    } catch (err: any) {
+      console.error('[App] Failed to fetch/play on-demand TTS:', err);
       setAudioLoadingId(null);
       setIsSpeaking(false);
       setCurrentPlayingId(null);
@@ -315,6 +309,9 @@ export default function App() {
   // Process User Query with Gemini API (Text + Gemini AI Audio TTS + Rate limit check)
   const handleSendQuery = async (queryText: string) => {
     if (!queryText.trim()) return;
+
+    // Unlock AudioContext on user interaction
+    geminiAudioPlayer.initOrResumeContext();
 
     setErrorMessage(null);
     setTranscript('');
@@ -357,7 +354,7 @@ export default function App() {
           message: queryText,
           history: priorHistory,
           language,
-          voice: geminiVoice,
+          voice: geminiVoice || 'Kore',
           clientId,
         }),
       });
@@ -416,6 +413,7 @@ export default function App() {
 
       // 5. If autoSpeak is enabled, play Gemini AI Voice with consistent voice model
       if (autoSpeak) {
+        console.log('[App] autoSpeak enabled. Initial audio attached:', !!audioBase64);
         setStatusText('CAVAB VERİLİR...');
         setCurrentPlayingId(assistantMsgId);
 
@@ -425,6 +423,7 @@ export default function App() {
         // If audio was not attached in chat response, fetch it with the exact voice model
         if (!finalAudioBase64) {
           try {
+            console.log('[App] Fetching fallback TTS for autoSpeak...');
             const ttsRes = await fetch('/api/tts', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -445,7 +444,7 @@ export default function App() {
               }
             }
           } catch (e) {
-            console.warn('Auto-TTS fetch error:', e);
+            console.error('[App] Auto-TTS fetch error:', e);
           }
         }
 
@@ -462,13 +461,14 @@ export default function App() {
               setStatusText('SİSTEM HAZIRDIR');
             },
             (err) => {
-              console.warn('Gemini AI audio playback error:', err);
+              console.error('[App] Gemini AI audio auto-playback error:', err);
               setIsSpeaking(false);
               setCurrentPlayingId(null);
               setStatusText('SİSTEM HAZIRDIR');
             }
           );
         } else {
+          console.warn('[App] No audio available to auto-speak');
           setIsSpeaking(false);
           setCurrentPlayingId(null);
           setStatusText('SİSTEM HAZIRDIR');
@@ -491,6 +491,7 @@ export default function App() {
 
   // Toggle Microphone Listening
   const handleToggleMic = () => {
+    geminiAudioPlayer.initOrResumeContext();
     if (isSpeaking) {
       handleStopSpeaking();
     }

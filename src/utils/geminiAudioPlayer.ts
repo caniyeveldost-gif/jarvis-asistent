@@ -10,33 +10,52 @@ export class GeminiAudioPlayer {
   public isPlaying: boolean = false;
   private onStateChangeCb: ((isPlaying: boolean) => void) | null = null;
 
-  private getAudioContext(): AudioContext {
+  // Lazily get or create AudioContext
+  public getAudioContext(): AudioContext {
     if (!this.audioCtx || this.audioCtx.state === 'closed') {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       this.audioCtx = new AudioContextClass();
     }
-    if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
-    }
     return this.audioCtx;
   }
 
-  // Convert raw 16-bit PCM little-endian buffer into Web Audio AudioBuffer
+  // Ensure AudioContext is unlocked / running on user gesture
+  public async initOrResumeContext(): Promise<void> {
+    try {
+      const ctx = this.getAudioContext();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+        console.log('[GeminiAudioPlayer] AudioContext resumed successfully');
+      }
+    } catch (err) {
+      console.warn('[GeminiAudioPlayer] Failed to resume AudioContext:', err);
+    }
+  }
+
+  // Convert raw 16-bit PCM little-endian buffer into Web Audio AudioBuffer safely
   private pcmToAudioBuffer(
-    buffer: ArrayBuffer,
+    uint8Array: Uint8Array,
     sampleRate: number = 24000,
     channels: number = 1
   ): AudioBuffer {
     const ctx = this.getAudioContext();
-    const int16Array = new Int16Array(buffer);
-    const numSamples = int16Array.length / channels;
-    const audioBuffer = ctx.createBuffer(channels, numSamples, sampleRate);
+    const bytesPerSample = 2;
+    const numSamples = Math.floor(uint8Array.length / (bytesPerSample * channels));
+    const audioBuffer = ctx.createBuffer(channels, Math.max(1, numSamples), sampleRate);
+
+    const dataView = new DataView(
+      uint8Array.buffer,
+      uint8Array.byteOffset,
+      numSamples * bytesPerSample * channels
+    );
 
     for (let channel = 0; channel < channels; channel++) {
       const channelData = audioBuffer.getChannelData(channel);
       for (let i = 0; i < numSamples; i++) {
-        // Normalize 16-bit signed int [-32768, 32767] to [-1.0, 1.0]
-        channelData[i] = int16Array[i * channels + channel] / 32768.0;
+        const byteOffset = (i * channels + channel) * 2;
+        // 16-bit signed integer little-endian [-32768, 32767]
+        const int16 = dataView.getInt16(byteOffset, true);
+        channelData[i] = int16 / 32768.0;
       }
     }
     return audioBuffer;
@@ -50,6 +69,12 @@ export class GeminiAudioPlayer {
     onEnd?: () => void,
     onError?: (err: any) => void
   ): Promise<void> {
+    if (!base64Data) {
+      console.warn('[GeminiAudioPlayer] playBase64Audio called with empty base64 data');
+      if (onError) onError(new Error('Audio data is empty'));
+      return;
+    }
+
     try {
       this.stop();
 
@@ -57,6 +82,12 @@ export class GeminiAudioPlayer {
       if (ctx.state === 'suspended') {
         await ctx.resume();
       }
+
+      console.log('[GeminiAudioPlayer] Decoding audio data...', {
+        base64Length: base64Data.length,
+        mimeType,
+        audioContextState: ctx.state,
+      });
 
       // Decode base64 string
       const binaryString = atob(base64Data);
@@ -76,21 +107,31 @@ export class GeminiAudioPlayer {
         bytes[2] === 0x46 && // 'F'
         bytes[3] === 0x46; // 'F'
 
-      if (isWav || !mimeType.includes('pcm')) {
+      if (isWav || (!mimeType.includes('pcm') && mimeType.includes('audio/'))) {
         try {
-          audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
-        } catch {
-          // Fallback to PCM interpretation
+          const bufferCopy = bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength
+          );
+          audioBuffer = await ctx.decodeAudioData(bufferCopy);
+        } catch (decodeErr) {
+          console.warn('[GeminiAudioPlayer] decodeAudioData failed, falling back to PCM decoder:', decodeErr);
           const sampleRateMatch = mimeType.match(/rate=(\d+)/);
           const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
-          audioBuffer = this.pcmToAudioBuffer(bytes.buffer, sampleRate, 1);
+          audioBuffer = this.pcmToAudioBuffer(bytes, sampleRate, 1);
         }
       } else {
         // Raw 16-bit PCM (standard for gemini-3.1-flash-tts-preview)
         const sampleRateMatch = mimeType.match(/rate=(\d+)/);
         const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
-        audioBuffer = this.pcmToAudioBuffer(bytes.buffer, sampleRate, 1);
+        audioBuffer = this.pcmToAudioBuffer(bytes, sampleRate, 1);
       }
+
+      console.log('[GeminiAudioPlayer] AudioBuffer ready:', {
+        duration: audioBuffer.duration.toFixed(2) + 's',
+        numberOfChannels: audioBuffer.numberOfChannels,
+        sampleRate: audioBuffer.sampleRate,
+      });
 
       const source = ctx.createBufferSource();
       source.buffer = audioBuffer;
@@ -103,6 +144,7 @@ export class GeminiAudioPlayer {
 
       source.onended = () => {
         if (this.currentSource === source) {
+          console.log('[GeminiAudioPlayer] Playback completed naturally');
           this.currentSource = null;
           this.isPlaying = false;
           if (this.onStateChangeCb) this.onStateChangeCb(false);
@@ -111,8 +153,9 @@ export class GeminiAudioPlayer {
       };
 
       source.start(0);
+      console.log('[GeminiAudioPlayer] Playback started');
     } catch (err: any) {
-      console.error('Gemini audio playback error:', err);
+      console.error('[GeminiAudioPlayer] Playback error:', err);
       this.isPlaying = false;
       if (this.onStateChangeCb) this.onStateChangeCb(false);
       if (onError) onError(err);
