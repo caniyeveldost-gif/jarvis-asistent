@@ -1,20 +1,22 @@
-import { generateGeminiReply, generateGeminiAudio, ChatHistoryItem } from './_gemini';
+import { generateGeminiReply, generateGeminiAudio, parseRequestBody, ChatHistoryItem } from './_gemini';
 
 export default async function handler(req: any, res: any) {
-  // CORS & method check
+  // Set CORS headers for all responses
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  // Handle preflight OPTIONS
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(200).end();
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    return res.status(405).json({ error: 'Method not allowed. Please use POST.' });
   }
 
   try {
-    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
+    const body = await parseRequestBody(req);
     const { message, history = [], voice = 'Kore' } = body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
@@ -90,9 +92,11 @@ Xüsusi qaydalar:
     });
   } catch (error: any) {
     console.error('Chat API Error:', error);
+    const errMsg = error?.message || String(error);
     return res.status(500).json({
-      error:
-        'Sistem hazırda yüksək yüklənmə altındadır. Xahiş edirəm bir neçə saniyə sonra yenidən cəhd edin.',
+      error: errMsg.includes('GEMINI_API_KEY')
+        ? errMsg
+        : 'Sistem hazırda cavab verə bilmədi. Xahiş edirəm bir neçə saniyə sonra yenidən cəhd edin.',
     });
   }
 }
