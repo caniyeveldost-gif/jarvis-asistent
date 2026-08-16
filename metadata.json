@@ -1,0 +1,5 @@
+  "name": "JARVIS Səsli Köməkçi",
+  "description": "Azərbaycan dilində və çoxdilli səsli süni intellekt köməkçisi - nitqi mətnə çevirmə, Gemini intellekti və səsli oxuma ilə.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
