@@ -11,6 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ManualInputBar } from './components/ManualInputBar';
 import { Footer } from './components/Footer';
 import { InfoModal, InfoModalTab } from './components/InfoModal';
+import { AdsterraBanner } from './components/AdsterraBanner';
 import { voiceRecognizer } from './utils/speechRecognition';
 import { geminiAudioPlayer } from './utils/geminiAudioPlayer';
 import { ttsManager } from './utils/speechSynthesis';
@@ -537,6 +538,9 @@ export default function App() {
           statusText={statusText}
           errorMessage={errorMessage}
         />
+
+        {/* Reklam / Adsterra 300x250 Banner */}
+        <AdsterraBanner />
 
         {/* Danışıq Tarixçəsi (Chat History) */}
         <ChatHistory
