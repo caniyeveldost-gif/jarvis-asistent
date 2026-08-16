@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { generateGeminiAudio, parseRequestBody } from './_gemini.js';
 
 export default async function handler(req: any, res: any) {
@@ -23,15 +24,25 @@ export default async function handler(req: any, res: any) {
 
     const audioData = await generateGeminiAudio(text, voice);
     if (!audioData) {
-      return res.status(500).json({ error: 'Audio generasiya edilə bilmədi.' });
+      return res.status(200).json({
+        audio: null,
+        mimeType: null,
+        fallback: true,
+        message: 'Gemini Audio generasiyası mümkün olmadı, yerli TTS aktivdir.',
+      });
     }
 
     return res.status(200).json({
       audio: audioData.audioBase64,
       mimeType: audioData.mimeType,
+      fallback: false,
     });
   } catch (error: any) {
-    console.error('TTS endpoint error:', error);
+    console.error('TTS endpoint error:', {
+      name: error?.name,
+      message: error?.message,
+      stack: error?.stack,
+    });
     const errMsg = error?.message || String(error);
     return res.status(500).json({
       error: errMsg.includes('GEMINI_API_KEY') ? errMsg : 'Audio generasiya zamanı xəta baş verdi.',

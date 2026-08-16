@@ -1,10 +1,16 @@
+import 'dotenv/config';
 import { GoogleGenAI, Modality } from '@google/genai';
 
 let geminiClient: GoogleGenAI | null = null;
 
 export function getGeminiClient(): GoogleGenAI {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.API_KEY ||
+    process.env.VITE_GEMINI_API_KEY;
+
   if (!apiKey) {
+    console.error('[Gemini Client] GEMINI_API_KEY is not defined in environment variables');
     throw new Error(
       'GEMINI_API_KEY tapılmadı. Zəhmət olmasa sistem mühit dəyişənlərində GEMINI_API_KEY qeyd edin.'
     );
@@ -125,16 +131,21 @@ export function cleanTextForTTS(text: string): string {
     .trim();
 }
 
+// Allowed Gemini TTS voice names
+const VALID_VOICES = ['Kore', 'Puck', 'Charon', 'Fenrir', 'Zephyr'];
+
 // Generate Audio Speech using Gemini TTS API (gemini-3.1-flash-tts-preview)
 // Sticking strictly to the chosen voice (default "Kore") with retries on the exact same voice
 export async function generateGeminiAudio(
   text: string,
   voiceName: string = 'Kore'
 ): Promise<{ audioBase64: string; mimeType: string } | null> {
-  const selectedVoice =
+  const cleanedVoice =
     voiceName && typeof voiceName === 'string' && voiceName.trim()
       ? voiceName.trim()
       : 'Kore';
+
+  const selectedVoice = VALID_VOICES.includes(cleanedVoice) ? cleanedVoice : 'Kore';
 
   const cleanedText = cleanTextForTTS(text);
   if (!cleanedText) {
@@ -145,16 +156,22 @@ export async function generateGeminiAudio(
   // Ensure prompt text is reasonable length for prompt synthesis
   const truncatedText = cleanedText.length > 1200 ? cleanedText.slice(0, 1200) + '...' : cleanedText;
 
-  console.log(`[Gemini TTS] Generating audio for ${truncatedText.length} chars using voice "${selectedVoice}"`);
+  console.log(`[Gemini TTS] Requesting audio for ${truncatedText.length} chars using voice "${selectedVoice}"`);
 
-  const client = getGeminiClient();
+  let client: GoogleGenAI;
+  try {
+    client = getGeminiClient();
+  } catch (err: any) {
+    console.error('[Gemini TTS] Client initialization error:', err?.message || err);
+    return null;
+  }
 
   // Retry up to 3 times on the EXACT same voice without switching voice models
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await client.models.generateContent({
         model: 'gemini-3.1-flash-tts-preview',
-        contents: [{ parts: [{ text: truncatedText }] }],
+        contents: truncatedText,
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -177,11 +194,20 @@ export async function generateGeminiAudio(
           mimeType: audioPart.inlineData.mimeType || 'audio/pcm;rate=24000',
         };
       } else {
-        console.warn(`[Gemini TTS] Attempt ${attempt + 1}: response candidate did not contain audio part`);
+        console.warn(`[Gemini TTS] Attempt ${attempt + 1}: response candidate did not contain audio part. Candidate:`, JSON.stringify(candidate));
       }
     } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      console.error(`[Gemini TTS] Attempt ${attempt + 1} with voice "${selectedVoice}" error:`, errMsg);
+      console.error(
+        `[Gemini TTS] Attempt ${attempt + 1} with voice "${selectedVoice}" failed:`,
+        {
+          name: err?.name,
+          message: err?.message,
+          status: err?.status,
+          code: err?.code,
+          stack: err?.stack,
+          rawError: typeof err === 'object' ? JSON.stringify(err, Object.getOwnPropertyNames(err)) : String(err),
+        }
+      );
 
       if (attempt < 2) {
         // Wait and retry with the exact same voice model

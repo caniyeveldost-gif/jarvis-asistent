@@ -1,18 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Settings, Volume2, Globe, ShieldCheck } from 'lucide-react';
+import { Cpu, Settings, Globe } from 'lucide-react';
 
 interface HeaderProps {
   onOpenSettings: () => void;
   language: string;
-  isSpeaking: boolean;
-  soundEffectsEnabled: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   language,
-  isSpeaking,
-  soundEffectsEnabled,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
 
@@ -55,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <p className="text-[10px] text-slate-400 tracking-wider font-mono hidden sm:block">
-              SƏSLİ İNTELLEKT SİSTEMİ
+              ŞƏXSİ SƏSLİ İNTELLEKT
             </p>
           </div>
         </div>
