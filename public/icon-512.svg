@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0e2338" />
+      <stop offset="100%" stop-color="#050811" />
+    </radialGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bgGlow)" />
+  <rect width="504" height="504" x="4" y="4" rx="92" fill="none" stroke="#06b6d4" stroke-opacity="0.3" stroke-width="4" />
+
+  <!-- Outer HUD Rings -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="#06b6d4" stroke-opacity="0.25" stroke-width="3" stroke-dasharray="16 10" />
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="4" stroke-dasharray="24 16" />
+  <circle cx="256" cy="256" r="130" fill="none" stroke="#06b6d4" stroke-opacity="0.6" stroke-width="2" />
+
+  <!-- Arc Reactor Center Core -->
+  <circle cx="256" cy="256" r="95" fill="#041527" stroke="#22d3ee" stroke-width="6" filter="url(#neonGlow)" />
+  <circle cx="256" cy="256" r="65" fill="#082f49" stroke="#38bdf8" stroke-width="4" />
+  <circle cx="256" cy="256" r="35" fill="url(#cyanGrad)" filter="url(#neonGlow)" />
+
+  <!-- Segment Rays -->
+  <g stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.8">
+    <line x1="256" y1="135" x2="256" y2="155" />
+    <line x1="256" y1="357" x2="256" y2="377" />
+    <line x1="135" y1="256" x2="155" y2="256" />
+    <line x1="357" y1="256" x2="377" y2="256" />
+    <line x1="170" y1="170" x2="185" y2="185" />
+    <line x1="342" y1="342" x2="327" y2="327" />
+    <line x1="342" y1="170" x2="327" y2="185" />
+    <line x1="170" y1="342" x2="185" y2="327" />
+  </g>
+
+  <!-- Typography -->
+  <text x="256" y="445" text-anchor="middle" fill="#38bdf8" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="34" letter-spacing="8">JARVIS</text>
+</svg>

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="100%" height="100%">
+  <defs>
+    <radialGradient id="bgGlow192" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0e2338" />
+      <stop offset="100%" stop-color="#050811" />
+    </radialGradient>
+    <linearGradient id="cyanGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="192" height="192" rx="36" fill="url(#bgGlow192)" />
+  <rect width="188" height="188" x="2" y="2" rx="34" fill="none" stroke="#06b6d4" stroke-opacity="0.3" stroke-width="2" />
+
+  <!-- Outer HUD Rings -->
+  <circle cx="96" cy="96" r="70" fill="none" stroke="#06b6d4" stroke-opacity="0.3" stroke-width="2" stroke-dasharray="8 6" />
+  <circle cx="96" cy="96" r="58" fill="none" stroke="#38bdf8" stroke-opacity="0.5" stroke-width="2" stroke-dasharray="10 8" />
+
+  <!-- Arc Reactor Center Core -->
+  <circle cx="96" cy="96" r="38" fill="#041527" stroke="#22d3ee" stroke-width="3" />
+  <circle cx="96" cy="96" r="26" fill="#082f49" stroke="#38bdf8" stroke-width="2" />
+  <circle cx="96" cy="96" r="14" fill="url(#cyanGrad192)" />
+
+  <!-- Segment Rays -->
+  <g stroke="#38bdf8" stroke-width="2" stroke-linecap="round" opacity="0.8">
+    <line x1="96" y1="48" x2="96" y2="56" />
+    <line x1="96" y1="136" x2="96" y2="144" />
+    <line x1="48" y1="96" x2="56" y2="96" />
+    <line x1="136" y1="96" x2="144" y2="96" />
+  </g>
+
+  <!-- Typography -->
+  <text x="96" y="172" text-anchor="middle" fill="#38bdf8" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="16" letter-spacing="4">JARVIS</text>
+</svg>
