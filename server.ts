@@ -3,9 +3,9 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import chatHandler from './api/chat';
-import ttsHandler from './api/tts';
-import healthHandler from './api/health';
+import chatHandler from './api/chat.js';
+import ttsHandler from './api/tts.js';
+import healthHandler from './api/health.js';
 
 dotenv.config();
 

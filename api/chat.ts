@@ -1,4 +1,4 @@
-import { generateGeminiReply, generateGeminiAudio, parseRequestBody, ChatHistoryItem } from './_gemini';
+import { generateGeminiReply, generateGeminiAudio, parseRequestBody, ChatHistoryItem } from './_gemini.js';
 
 export default async function handler(req: any, res: any) {
   // Set CORS headers for all responses
