@@ -197,11 +197,11 @@ export const JarvisCore: React.FC<JarvisCoreProps> = ({
             className="w-full flex items-center justify-center gap-2.5 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-cyan-500 hover:from-amber-400 hover:to-cyan-400 text-slate-950 font-tech font-black text-xs sm:text-sm uppercase tracking-wider transition-all shadow-[0_0_30px_rgba(245,158,11,0.6)] cursor-pointer active:scale-98 animate-pulse hover:animate-none"
           >
             <Gift className="w-4 h-4 text-slate-950" />
-            <span>Reklam izlə, 5 sual da qazan</span>
+            <span>Reklam izlə, 2 sual da qazan</span>
             <Sparkles className="w-4 h-4 text-slate-950" />
           </button>
           <span className="text-[10px] text-amber-300/80 font-mono mt-1.5">
-            15 saniyəlik qısa reklam izləyərək dərhal +5 sual qazanın
+            15 saniyəlik qısa reklam izləyərək əlavə sual balansınızı artırın
           </span>
         </div>
       )}

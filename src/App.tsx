@@ -260,13 +260,13 @@ export default function App() {
       return;
     }
 
-    // 2. Otherwise fetch audio on demand from /api/tts
+    // 2. Otherwise fetch audio on demand from /api/tts with the exact same voice
     setAudioLoadingId(id);
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice: geminiVoice }),
+        body: JSON.stringify({ text, voice: geminiVoice || 'Kore' }),
       });
 
       if (!response.ok) {
@@ -295,39 +295,20 @@ export default function App() {
             setStatusText('SİSTEM HAZIRDIR');
           },
           () => {
-            ttsManager.speak(
-              text,
-              'tr-TR',
-              () => setIsSpeaking(true),
-              () => {
-                setIsSpeaking(false);
-                setCurrentPlayingId(null);
-                setStatusText('SİSTEM HAZIRDIR');
-              }
-            );
+            setIsSpeaking(false);
+            setCurrentPlayingId(null);
+            setStatusText('SİSTEM HAZIRDIR');
           }
         );
       } else {
         throw new Error('No audio in response');
       }
     } catch (err) {
-      console.warn('Fallback to local TTS engine:', err);
+      console.warn('Gemini audio playback error:', err);
       setAudioLoadingId(null);
-      ttsManager.speak(
-        text,
-        'tr-TR',
-        () => setIsSpeaking(true),
-        () => {
-          setIsSpeaking(false);
-          setCurrentPlayingId(null);
-          setStatusText('SİSTEM HAZIRDIR');
-        },
-        () => {
-          setIsSpeaking(false);
-          setCurrentPlayingId(null);
-          setStatusText('SİSTEM HAZIRDIR');
-        }
-      );
+      setIsSpeaking(false);
+      setCurrentPlayingId(null);
+      setStatusText('SİSTEM HAZIRDIR');
     }
   };
 
@@ -433,14 +414,45 @@ export default function App() {
         soundFX.playReady();
       }
 
-      // 5. If autoSpeak is enabled, play Gemini AI Voice or fallback to TTS
+      // 5. If autoSpeak is enabled, play Gemini AI Voice with consistent voice model
       if (autoSpeak) {
         setStatusText('CAVAB VERİLİR...');
         setCurrentPlayingId(assistantMsgId);
-        if (audioBase64) {
+
+        let finalAudioBase64 = audioBase64;
+        let finalMimeType = mimeType;
+
+        // If audio was not attached in chat response, fetch it with the exact voice model
+        if (!finalAudioBase64) {
+          try {
+            const ttsRes = await fetch('/api/tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: replyText, voice: geminiVoice || 'Kore' }),
+            });
+            if (ttsRes.ok) {
+              const ttsData = await ttsRes.json();
+              if (ttsData.audio) {
+                finalAudioBase64 = ttsData.audio;
+                finalMimeType = ttsData.mimeType || finalMimeType;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId
+                      ? { ...m, audio: ttsData.audio, mimeType: ttsData.mimeType }
+                      : m
+                  )
+                );
+              }
+            }
+          } catch (e) {
+            console.warn('Auto-TTS fetch error:', e);
+          }
+        }
+
+        if (finalAudioBase64) {
           await geminiAudioPlayer.playBase64Audio(
-            audioBase64,
-            mimeType,
+            finalAudioBase64,
+            finalMimeType,
             () => {
               setIsSpeaking(true);
             },
@@ -450,40 +462,16 @@ export default function App() {
               setStatusText('SİSTEM HAZIRDIR');
             },
             (err) => {
-              console.warn('Gemini AI audio playback error, fallback to TTS:', err);
-              ttsManager.speak(
-                replyText,
-                'tr-TR',
-                () => setIsSpeaking(true),
-                () => {
-                  setIsSpeaking(false);
-                  setCurrentPlayingId(null);
-                  setStatusText('SİSTEM HAZIRDIR');
-                },
-                () => {
-                  setIsSpeaking(false);
-                  setCurrentPlayingId(null);
-                  setStatusText('SİSTEM HAZIRDIR');
-                }
-              );
+              console.warn('Gemini AI audio playback error:', err);
+              setIsSpeaking(false);
+              setCurrentPlayingId(null);
+              setStatusText('SİSTEM HAZIRDIR');
             }
           );
         } else {
-          ttsManager.speak(
-            replyText,
-            'tr-TR',
-            () => setIsSpeaking(true),
-            () => {
-              setIsSpeaking(false);
-              setCurrentPlayingId(null);
-              setStatusText('SİSTEM HAZIRDIR');
-            },
-            () => {
-              setIsSpeaking(false);
-              setCurrentPlayingId(null);
-              setStatusText('SİSTEM HAZIRDIR');
-            }
-          );
+          setIsSpeaking(false);
+          setCurrentPlayingId(null);
+          setStatusText('SİSTEM HAZIRDIR');
         }
       } else {
         setStatusText('SİSTEM HAZIRDIR');

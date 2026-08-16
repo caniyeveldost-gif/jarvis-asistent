@@ -146,45 +146,60 @@ export function cleanTextForTTS(text: string): string {
 }
 
 // Generate Audio Speech using Gemini TTS API (gemini-3.1-flash-tts-preview)
+// Sticking strictly to the chosen voice (default "Kore") with retries on the same voice
 export async function generateGeminiAudio(
   text: string,
   voiceName: string = 'Kore'
 ): Promise<{ audioBase64: string; mimeType: string } | null> {
-  try {
-    const cleanedText = cleanTextForTTS(text);
-    if (!cleanedText) return null;
+  const selectedVoice =
+    voiceName && typeof voiceName === 'string' && voiceName.trim()
+      ? voiceName.trim()
+      : 'Kore';
 
-    const client = getGeminiClient();
-    const prompt = `Azərbaycan dilində olan bu mətni aydın, səlis və kübar intonasiya ilə oxu: ${cleanedText}`;
+  const cleanedText = cleanTextForTTS(text);
+  if (!cleanedText) return null;
 
-    const response = await client.models.generateContent({
-      model: 'gemini-3.1-flash-tts-preview',
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voiceName || 'Kore',
+  const client = getGeminiClient();
+  const prompt = `Azərbaycan dilində olan bu mətni aydın, səlis və kübar intonasiya ilə oxu: ${cleanedText}`;
+
+  // Retry up to 3 times on the EXACT same voice without switching voice models
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await client.models.generateContent({
+        model: 'gemini-3.1-flash-tts-preview',
+        contents: [{ parts: [{ text: prompt }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: selectedVoice,
+              },
             },
           },
         },
-      },
-    });
+      });
 
-    const candidate = response.candidates?.[0];
-    const audioPart = candidate?.content?.parts?.find((p) => p.inlineData && p.inlineData.data);
+      const candidate = response.candidates?.[0];
+      const audioPart = candidate?.content?.parts?.find((p) => p.inlineData && p.inlineData.data);
 
-    if (audioPart && audioPart.inlineData?.data) {
-      return {
-        audioBase64: audioPart.inlineData.data,
-        mimeType: audioPart.inlineData.mimeType || 'audio/pcm;rate=24000',
-      };
+      if (audioPart && audioPart.inlineData?.data) {
+        return {
+          audioBase64: audioPart.inlineData.data,
+          mimeType: audioPart.inlineData.mimeType || 'audio/pcm;rate=24000',
+        };
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      console.warn(`TTS audio attempt ${attempt + 1} with voice "${selectedVoice}" failed:`, errMsg);
+
+      if (attempt < 2) {
+        // Wait and retry with the exact same voice model
+        await sleep(600 * (attempt + 1));
+        continue;
+      }
     }
-
-    return null;
-  } catch (err: any) {
-    console.warn('Gemini TTS Audio generation error:', err?.message || err);
-    return null;
   }
+
+  return null;
 }
