@@ -11,6 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ManualInputBar } from './components/ManualInputBar';
 import { voiceRecognizer } from './utils/speechRecognition';
 import { geminiAudioPlayer } from './utils/geminiAudioPlayer';
+import { ttsManager } from './utils/speechSynthesis';
 import { soundFX } from './utils/audioEffects';
 
 export default function App() {
@@ -113,12 +114,13 @@ export default function App() {
   // Stop currently playing audio
   const handleStopSpeaking = () => {
     geminiAudioPlayer.stop();
+    ttsManager.stop();
     setIsSpeaking(false);
     setCurrentPlayingId(null);
     setStatusText('SİSTEM HAZIRDIR');
   };
 
-  // Play a specific message audio using Gemini AI Voice
+  // Play a specific message audio using Gemini AI Voice (or TTS fallback)
   const handlePlaySpeech = async (
     id: string,
     text: string,
@@ -126,6 +128,7 @@ export default function App() {
     cachedMimeType?: string | null
   ) => {
     geminiAudioPlayer.stop();
+    ttsManager.stop();
     setCurrentPlayingId(id);
     setStatusText('SƏSLƏNDİRİLİR...');
 
@@ -143,10 +146,22 @@ export default function App() {
           setStatusText('SİSTEM HAZIRDIR');
         },
         (err) => {
-          console.warn('Gemini audio playback error:', err);
-          setIsSpeaking(false);
-          setCurrentPlayingId(null);
-          setStatusText('SİSTEM HAZIRDIR');
+          console.warn('Gemini audio playback error, falling back to TTS:', err);
+          ttsManager.speak(
+            text,
+            'tr-TR',
+            () => setIsSpeaking(true),
+            () => {
+              setIsSpeaking(false);
+              setCurrentPlayingId(null);
+              setStatusText('SİSTEM HAZIRDIR');
+            },
+            () => {
+              setIsSpeaking(false);
+              setCurrentPlayingId(null);
+              setStatusText('SİSTEM HAZIRDIR');
+            }
+          );
         }
       );
       return;
@@ -188,18 +203,39 @@ export default function App() {
             setStatusText('SİSTEM HAZIRDIR');
           },
           () => {
-            setIsSpeaking(false);
-            setCurrentPlayingId(null);
-            setStatusText('SİSTEM HAZIRDIR');
+            ttsManager.speak(
+              text,
+              'tr-TR',
+              () => setIsSpeaking(true),
+              () => {
+                setIsSpeaking(false);
+                setCurrentPlayingId(null);
+                setStatusText('SİSTEM HAZIRDIR');
+              }
+            );
           }
         );
+      } else {
+        throw new Error('No audio in response');
       }
     } catch (err) {
-      console.warn('Failed to load audio from TTS API:', err);
+      console.warn('Fallback to local TTS engine:', err);
       setAudioLoadingId(null);
-      setIsSpeaking(false);
-      setCurrentPlayingId(null);
-      setStatusText('SİSTEM HAZIRDIR');
+      ttsManager.speak(
+        text,
+        'tr-TR',
+        () => setIsSpeaking(true),
+        () => {
+          setIsSpeaking(false);
+          setCurrentPlayingId(null);
+          setStatusText('SİSTEM HAZIRDIR');
+        },
+        () => {
+          setIsSpeaking(false);
+          setCurrentPlayingId(null);
+          setStatusText('SİSTEM HAZIRDIR');
+        }
+      );
     }
   };
 
@@ -280,28 +316,58 @@ export default function App() {
         soundFX.playReady();
       }
 
-      // 5. If autoSpeak is enabled and audio exists, play Gemini AI Voice immediately
-      if (autoSpeak && audioBase64) {
+      // 5. If autoSpeak is enabled, play Gemini AI Voice or fallback to TTS immediately
+      if (autoSpeak) {
         setStatusText('CAVAB VERİLİR...');
         setCurrentPlayingId(assistantMsgId);
-        await geminiAudioPlayer.playBase64Audio(
-          audioBase64,
-          mimeType,
-          () => {
-            setIsSpeaking(true);
-          },
-          () => {
-            setIsSpeaking(false);
-            setCurrentPlayingId(null);
-            setStatusText('SİSTEM HAZIRDIR');
-          },
-          (err) => {
-            console.warn('Gemini AI audio playback error:', err);
-            setIsSpeaking(false);
-            setCurrentPlayingId(null);
-            setStatusText('SİSTEM HAZIRDIR');
-          }
-        );
+        if (audioBase64) {
+          await geminiAudioPlayer.playBase64Audio(
+            audioBase64,
+            mimeType,
+            () => {
+              setIsSpeaking(true);
+            },
+            () => {
+              setIsSpeaking(false);
+              setCurrentPlayingId(null);
+              setStatusText('SİSTEM HAZIRDIR');
+            },
+            (err) => {
+              console.warn('Gemini AI audio playback error, fallback to TTS:', err);
+              ttsManager.speak(
+                replyText,
+                'tr-TR',
+                () => setIsSpeaking(true),
+                () => {
+                  setIsSpeaking(false);
+                  setCurrentPlayingId(null);
+                  setStatusText('SİSTEM HAZIRDIR');
+                },
+                () => {
+                  setIsSpeaking(false);
+                  setCurrentPlayingId(null);
+                  setStatusText('SİSTEM HAZIRDIR');
+                }
+              );
+            }
+          );
+        } else {
+          ttsManager.speak(
+            replyText,
+            'tr-TR',
+            () => setIsSpeaking(true),
+            () => {
+              setIsSpeaking(false);
+              setCurrentPlayingId(null);
+              setStatusText('SİSTEM HAZIRDIR');
+            },
+            () => {
+              setIsSpeaking(false);
+              setCurrentPlayingId(null);
+              setStatusText('SİSTEM HAZIRDIR');
+            }
+          );
+        }
       } else {
         setStatusText('SİSTEM HAZIRDIR');
       }
