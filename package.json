@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build",
+    "generate:icons": "node scripts/generate-icons.cjs",
+    "build": "node scripts/generate-icons.cjs && vite build",
     "preview": "vite preview",
     "start": "tsx server.ts",
     "clean": "rm -rf dist",
@@ -21,6 +22,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "sharp": "^0.35.3",
     "vite": "^6.2.3"
   },
   "devDependencies": {

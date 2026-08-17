@@ -1,4 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+
+// Ultra-clean, standalone SVG with paths (no external font dependency)
+function createSvg(size, isMaskable = false) {
+  // If maskable, safe zone is inner 80% circle
+  const scale = isMaskable ? 0.78 : 0.92;
+  const cx = 256;
+  const cy = 256;
+  
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="${size}" height="${size}">
   <defs>
     <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%">
       <stop offset="0%" stop-color="#0e2439" />
@@ -19,11 +30,11 @@
   </defs>
 
   <!-- Background Base -->
-  <rect width="512" height="512" rx="108" fill="url(#bgGrad)" />
-  <rect width="504" height="504" x="4" y="4" rx="104" fill="none" stroke="#06b6d4" stroke-opacity="0.3" stroke-width="4" />
+  <rect width="512" height="512" ${isMaskable ? '' : 'rx="108"'} fill="url(#bgGrad)" />
+  ${!isMaskable ? '<rect width="504" height="504" x="4" y="4" rx="104" fill="none" stroke="#06b6d4" stroke-opacity="0.3" stroke-width="4" />' : ''}
 
   <!-- Main Scaled Group -->
-  <g transform="translate(256, 256) scale(0.92) translate(-256, -256)">
+  <g transform="translate(${cx}, ${cy}) scale(${scale}) translate(-${cx}, -${cy})">
     <!-- Outer Glow & HUD Orbit Rings -->
     <circle cx="256" cy="256" r="200" fill="none" stroke="#0ea5e9" stroke-opacity="0.15" stroke-width="2" />
     <circle cx="256" cy="256" r="184" fill="none" stroke="#06b6d4" stroke-opacity="0.35" stroke-width="3" stroke-dasharray="24 12" />
@@ -65,4 +76,54 @@
     <!-- S -->
     <path d="M 390 436 Q 374 430 374 440 Q 374 446 390 449 Q 396 451 396 456 Q 396 462 374 462" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" />
   </g>
-</svg>
+</svg>`;
+}
+
+async function generateAllIcons() {
+  const publicDir = path.resolve(__dirname, '../public');
+  if (!fs.existsSync(publicDir)) {
+    fs.mkdirSync(publicDir, { recursive: true });
+  }
+
+  // Standard sizes
+  const sizes = [48, 72, 96, 128, 144, 192, 384, 512];
+
+  console.log('Generating valid binary PNG icons...');
+
+  for (const s of sizes) {
+    // 1. Regular icon (purpose: any)
+    const svgContent = createSvg(s, false);
+    const regularBuffer = Buffer.from(svgContent);
+    const regularPng = await sharp(regularBuffer, { density: 300 })
+      .resize(s, s)
+      .png({ compressionLevel: 9, adaptiveFiltering: true, force: true })
+      .toBuffer();
+
+    const regularPath = path.join(publicDir, `icon-${s}.png`);
+    fs.writeFileSync(regularPath, regularPng);
+
+    // 2. Maskable icon (purpose: maskable)
+    const maskableSvg = createSvg(s, true);
+    const maskableBuffer = Buffer.from(maskableSvg);
+    const maskablePng = await sharp(maskableBuffer, { density: 300 })
+      .resize(s, s)
+      .png({ compressionLevel: 9, adaptiveFiltering: true, force: true })
+      .toBuffer();
+
+    const maskablePath = path.join(publicDir, `icon-maskable-${s}.png`);
+    fs.writeFileSync(maskablePath, maskablePng);
+
+    console.log(`✓ icon-${s}.png (${regularPng.length} bytes) & icon-maskable-${s}.png (${maskablePng.length} bytes)`);
+  }
+
+  // Also write the master SVG files
+  fs.writeFileSync(path.join(publicDir, 'icon-512.svg'), createSvg(512, false), 'utf8');
+  fs.writeFileSync(path.join(publicDir, 'icon-192.svg'), createSvg(192, false), 'utf8');
+
+  console.log('All binary PNG and SVG icons generated successfully!');
+}
+
+generateAllIcons().catch((err) => {
+  console.error('Error generating icons:', err);
+  process.exit(1);
+});
