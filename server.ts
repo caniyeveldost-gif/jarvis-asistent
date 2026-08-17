@@ -15,6 +15,28 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
+// Global CORS & caching headers for assets
+app.use((_req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  next();
+});
+
+// Explicit routes for PWA manifest & sw
+app.get('/manifest.json', (_req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  const manifestPath = path.join(__dirname, process.env.NODE_ENV === 'production' ? 'dist' : 'public', 'manifest.json');
+  res.sendFile(manifestPath);
+});
+
+app.get('/sw.js', (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Service-Worker-Allowed', '/');
+  const swPath = path.join(__dirname, process.env.NODE_ENV === 'production' ? 'dist' : 'public', 'sw.js');
+  res.sendFile(swPath);
+});
+
 // Forward Express API routes to Vercel Serverless Function handlers
 app.all('/api/chat', (req: Request, res: Response) => chatHandler(req, res));
 app.all('/api/tts', (req: Request, res: Response) => ttsHandler(req, res));

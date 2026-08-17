@@ -1,10 +1,15 @@
-const CACHE_NAME = 'jarvis-pwa-v2';
+const CACHE_NAME = 'jarvis-pwa-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
+  '/icon-maskable-192.png',
+  '/icon-maskable-512.png',
+  '/icon-144.png',
+  '/icon-96.png',
+  '/icon-48.png',
   '/icon-192.svg',
   '/icon-512.svg',
 ];
@@ -13,7 +18,9 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return cache.addAll(ASSETS_TO_CACHE).catch((err) => {
+        console.warn('SW pre-cache non-fatal error:', err);
+      });
     })
   );
   self.skipWaiting();
